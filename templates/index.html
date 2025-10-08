@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <title>KKTCMB Automation Chat</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .bubble-user { background-color: #2563eb; color: white; align-self: flex-end; }
+    .bubble-system { background-color: #e5e7eb; color: #111827; align-self: flex-start; }
+    .bubble { max-width: 80%; padding: 8px 12px; margin: 6px 0; border-radius: 12px; font-size: 0.9rem; white-space: pre-wrap; }
+  </style>
+</head>
+<body class="bg-gray-100 flex flex-col items-center h-screen">
+  <div class="w-full max-w-3xl bg-white shadow-md rounded-lg mt-10 flex flex-col p-4">
+    <div id="log" class="flex flex-col overflow-y-auto p-2 bg-gray-50 h-[70vh] border rounded-md"></div>
+    <div id="modeBadge" class="hidden mt-2 text-sm font-semibold self-end"></div>
+    <div class="flex mt-4">
+      <input id="prompt" placeholder="ör: 'bugünkü tüm kurları indir' veya 'son 3 gün için euro indir'"
+             class="flex-1 border p-2 rounded-l-md focus:outline-none" />
+      <button id="sendBtn" class="bg-blue-600 text-white px-4 rounded-r-md">Gönder</button>
+    </div>
+  </div>
+
+  <script>
+    const logDiv = document.getElementById("log");
+    const promptInput = document.getElementById("prompt");
+    const sendBtn = document.getElementById("sendBtn");
+    const badge = document.getElementById("modeBadge");
+
+    function appendBubble(text, isUser = false) {
+      const div = document.createElement("div");
+      div.className = `bubble ${isUser ? "bubble-user self-end" : "bubble-system self-start"}`;
+      // Excel linklerini tıklanabilir yap
+      if (text.endsWith(".xlsx")) {
+        const link = document.createElement("a");
+        link.href = "#";
+        link.textContent = text;
+        link.onclick = () => alert("📁 Dosya Masaüstü/KKTCMB_Downloads klasörüne kaydedildi.");
+        div.appendChild(document.createTextNode("💾 "));
+        div.appendChild(link);
+      } else {
+        div.textContent = text;
+      }
+      logDiv.appendChild(div);
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function showModeBadge(mode, currency, dates) {
+      const colors = { all: "bg-purple-600", single: "bg-green-600", both: "bg-orange-500" };
+      badge.className = `px-3 py-1 rounded-full text-white ${colors[mode] || "bg-gray-600"} self-end`;
+      badge.textContent = `MODE: ${mode.toUpperCase()}  ${currency ? "• " + currency : ""}  (${dates})`;
+      badge.classList.remove("hidden");
+    }
+
+    function connectAndSend(prompt) {
+      const ws = new WebSocket(`ws://${location.host}/ws`);
+      ws.onopen = () => ws.send(prompt);
+      ws.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          if (data.type === "log") appendBubble(data.msg);
+          else if (data.type === "meta") {
+            const { mode, currency, start_date, end_date } = data.data;
+            const dates = `${start_date} → ${end_date}`;
+            showModeBadge(mode, currency, dates);
+          }
+          else if (data.type === "error") appendBubble("❌ " + data.msg);
+        } catch {
+          appendBubble(ev.data);
+        }
+      };
+      ws.onerror = () => appendBubble("⚠️ Bağlantı hatası");
+      ws.onclose = () => appendBubble("— bağlantı kapandı —");
+    }
+
+    function sendPrompt() {
+      const val = promptInput.value.trim();
+      if (!val) return;
+      appendBubble(val, true);
+      connectAndSend(val);
+      promptInput.value = "";
+    }
+
+    sendBtn.addEventListener("click", sendPrompt);
+    promptInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") sendPrompt();
+    });
+  </script>
+</body>
+</html>
